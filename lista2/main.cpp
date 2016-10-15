@@ -44,43 +44,43 @@ std::string hex(const mp::uint256_t& n)
     return oss.str();
 }
 
-ByteBuffer encrypt(const std::string& data, const Key& key, const Iv& iv)
+int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key, 
+    unsigned char *iv, unsigned char *ciphertext)
 {
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
-    if(!ctx) throw "failed to load";
+  EVP_CIPHER_CTX *ctx;
 
-    ByteBuffer keyBuff;
-    mp::export_bits(key, std::back_inserter(keyBuff), 8);
-    
-    ByteBuffer ivBuff;
-    mp::export_bits(iv, std::back_inserter(ivBuff), 8);
+  int len;
 
-    if(1 != EVP_EncryptInit(ctx, EVP_aes_256_cbc(), keyBuff.data(), ivBuff.data())) throw "fail";
-    const int buffLen = data.size() + EVP_CIPHER_block_size(EVP_aes_256_cbc());
-    int tmpLen;
-    int outDataLen = 0;
+  int ciphertext_len;
 
-    const auto blockSize = EVP_CIPHER_CTX_block_size(ctx);
-    int paddedSize = (data.size() / blockSize) * blockSize;
-    if(data.size() % blockSize != 0)
-    {
-        paddedSize += blockSize;
-    }
-    
-    ByteBuffer paddedData(paddedSize, 0);
-    std::copy(std::begin(data), std::end(data), std::begin(paddedData));
+  /* Create and initialise the context */
+  if(!(ctx = EVP_CIPHER_CTX_new())) handleErrors();
 
-    ByteBuffer outData(buffLen, 0);
-    if(1 != EVP_EncryptUpdate(ctx, outData.data(), &tmpLen, paddedData.data(), paddedData.size())) throw "fail";
-    outDataLen += tmpLen;
-    if(1 != EVP_EncryptFinal(ctx, outData.data(), &tmpLen)) throw "fail";
-    outDataLen += tmpLen;
-    std::cout << "len1 " << outDataLen << std::endl;   
+  /* Initialise the encryption operation. IMPORTANT - ensure you use a key
+   * and IV size appropriate for your cipher
+   * In this example we are using 256 bit AES (i.e. a 256 bit key). The
+   * IV size for *most* modes is the same as the block size. For AES this
+   * is 128 bits */
+  if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
+    handleErrors();
 
-    EVP_CIPHER_CTX_free(ctx);
-    
-    outData.resize(outDataLen);
-    return outData;
+  /* Provide the message to be encrypted, and obtain the encrypted output.
+   * EVP_EncryptUpdate can be called multiple times if necessary
+   */
+  if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+    handleErrors();
+  ciphertext_len = len;
+
+  /* Finalise the encryption. Further ciphertext bytes may be written at
+   * this stage.
+   */
+  if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) handleErrors();
+  ciphertext_len += len;
+
+  /* Clean up */
+  EVP_CIPHER_CTX_free(ctx);
+
+  return ciphertext_len;
 }
 
 std::string decrypt(const ByteBuffer& data, const Key& key, const Iv& iv)

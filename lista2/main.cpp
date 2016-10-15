@@ -9,24 +9,27 @@
 #include <cassert>
 #include <memory>
 #include <iterator>
+#include <stdexcept>
 
 #include <openssl/evp.h>
 #include <openssl/aes.h>
+#include <openssl/err.h>
 #include <boost/multiprecision/cpp_int.hpp>
 
 namespace mp = boost::multiprecision;
 using ByteBuffer = std::vector<uint8_t>;
 using Key = mp::uint256_t;
-using Iv = mp::uint256_t;
+using Iv = mp::uint128_t;
 const auto AES_BITS = 256;
 
 
 std::string hex(const ByteBuffer& b)
 {
     std::ostringstream oss;
-    oss << std::setw(2) << std::setfill('0');
     for(const auto& c : b)
     {
+        oss << std::setfill('0');
+        oss << std::setw(2);
         oss << std::hex << static_cast<int>(c) << " ";
     }
     return oss.str();
@@ -43,39 +46,83 @@ std::string hex(const mp::uint256_t& n)
 
 ByteBuffer encrypt(const std::string& data, const Key& key, const Iv& iv)
 {
-    EVP_CIPHER_CTX ctx;
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if(!ctx) throw "failed to load";
+
     ByteBuffer keyBuff;
     mp::export_bits(key, std::back_inserter(keyBuff), 8);
     
     ByteBuffer ivBuff;
     mp::export_bits(iv, std::back_inserter(ivBuff), 8);
 
-    EVP_EncryptInit(&ctx, EVP_aes_256_cbc(), keyBuff.data(), ivBuff.data());
-    int outDataLen = data.size() + EVP_CIPHER_block_size(EVP_aes_256_cbc());
+    if(1 != EVP_EncryptInit(ctx, EVP_aes_256_cbc(), keyBuff.data(), ivBuff.data())) throw "fail";
+    const int buffLen = data.size() + EVP_CIPHER_block_size(EVP_aes_256_cbc());
+    int tmpLen;
+    int outDataLen = 0;
 
-    ByteBuffer outData(outDataLen, 0);
-    EVP_EncryptFinal(&ctx, outData.data(), &outDataLen);
+    const auto blockSize = EVP_CIPHER_CTX_block_size(ctx);
+    int paddedSize = (data.size() / blockSize) * blockSize;
+    if(data.size() % blockSize != 0)
+    {
+        paddedSize += blockSize;
+    }
+    
+    ByteBuffer paddedData(paddedSize, 0);
+    std::copy(std::begin(data), std::end(data), std::begin(paddedData));
 
+    ByteBuffer outData(buffLen, 0);
+    if(1 != EVP_EncryptUpdate(ctx, outData.data(), &tmpLen, paddedData.data(), paddedData.size())) throw "fail";
+    outDataLen += tmpLen;
+    if(1 != EVP_EncryptFinal(ctx, outData.data(), &tmpLen)) throw "fail";
+    outDataLen += tmpLen;
+    std::cout << "len1 " << outDataLen << std::endl;   
+
+    EVP_CIPHER_CTX_free(ctx);
+    
     outData.resize(outDataLen);
     return outData;
 }
 
 std::string decrypt(const ByteBuffer& data, const Key& key, const Iv& iv)
 {
-    EVP_CIPHER_CTX ctx;
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if(!ctx) throw "failed to create cipher ctx";
     ByteBuffer keyBuff;
     mp::export_bits(key, std::back_inserter(keyBuff), 8);
     
     ByteBuffer ivBuff;
     mp::export_bits(iv, std::back_inserter(ivBuff), 8);
 
-    EVP_EncryptInit(&ctx, EVP_aes_256_cbc(), keyBuff.data(), ivBuff.data());
-    int outDataLen = data.size() + EVP_CIPHER_block_size(EVP_aes_256_cbc());
+    if(1 != EVP_EncryptInit(ctx, EVP_aes_256_cbc(), keyBuff.data(), ivBuff.data())) std::runtime_error("fail init");
+    
+    const auto blockSize = EVP_CIPHER_CTX_block_size(ctx);
+ 
+    int paddedSize = (data.size() / blockSize) * blockSize;
+    if(data.size() % blockSize != 0)
+    {
+        paddedSize += blockSize;
+    }
+    
+    ByteBuffer paddedData(paddedSize, 0);
+    std::copy(std::begin(data), std::end(data), std::begin(paddedData));
 
-    std::string outData(outDataLen + 1, 0);
-    EVP_DecryptFinal(&ctx, reinterpret_cast<uint8_t*>(&outData[0]), &outDataLen);
+    const int buffLen = paddedData.size() + blockSize;
+    int tmpLen;
+    int outDataLen = 0;
+   
+    std::cout << "in data size: " << data.size() << " " << paddedData.size() << std::endl; 
+    ByteBuffer outDataBuff(buffLen + 1, 0);
+    if(1 != EVP_DecryptUpdate(ctx, outDataBuff.data(), &tmpLen, paddedData.data(), paddedData.size())) std::runtime_error("fail update");
+    outDataLen += tmpLen;
+    std::cout << "dd" << std::endl;
+    if(1 != EVP_DecryptFinal(ctx, outDataBuff.data() + outDataLen, &tmpLen)) {ERR_print_errors_fp (stderr); throw std::runtime_error("fail final");}
+    outDataLen += tmpLen;
+    
+    std::string outData(reinterpret_cast<char*>(outDataBuff.data()));
+    std::cout << "len2 " << outDataLen << std::endl;
 
-    outData.resize(outDataLen);
+    EVP_CIPHER_CTX_free(ctx);
+
     return outData;
 }
 
@@ -175,11 +222,13 @@ void task1()
 
 int main()
 {
-    Key ckey = 0;
+    Key ckey("0x00000000000000000000000000000000000000000000000000000000000F");
     Iv ivec = 0;
     
-    auto crypto = encrypt("test encrypt", ckey, ivec);
+    auto crypto = encrypt("ttt", ckey, ivec);
+    auto plain = decrypt(crypto, ckey, ivec); 
     
     std::cout << hex(crypto) << std::endl;
+    std::cout << "'" << plain << "'" << std::endl;
 
 }

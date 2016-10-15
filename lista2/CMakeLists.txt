@@ -5,5 +5,5 @@ SET (CMAKE_CXX_COMPILER             "/usr/bin/clang++")
 set (CMAKE_CXX_STANDARD 14)
 
 add_executable(lista2 main.cpp)
-target_link_libraries(lista2 ssl crypto)
+target_link_libraries(lista2 ssl crypto pthread)
 

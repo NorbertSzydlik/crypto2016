@@ -15,6 +15,8 @@
 #include <openssl/aes.h>
 #include <openssl/err.h>
 #include <boost/multiprecision/cpp_int.hpp>
+#include <boost/multiprecision/cpp_dec_float.hpp>
+#include <boost/format.hpp>
 
 namespace mp = boost::multiprecision;
 using ByteBuffer = std::vector<uint8_t>;
@@ -22,6 +24,25 @@ using Key = mp::uint256_t;
 using Iv = mp::uint128_t;
 const auto AES_BITS = 256;
 
+class CipherCtxHandler
+{
+public:
+    CipherCtxHandler() : ctx_(EVP_CIPHER_CTX_new()) 
+    {
+        if(!ctx_)
+            std::cerr << "CTX initailization failed" << std::endl;
+    }
+    ~CipherCtxHandler() 
+    {
+        EVP_CIPHER_CTX_free(ctx_);
+    }
+    EVP_CIPHER_CTX* operator&()
+    {
+        return ctx_;
+    }
+private:
+    EVP_CIPHER_CTX* ctx_;
+};
 
 std::string hex(const ByteBuffer& b)
 {
@@ -55,47 +76,41 @@ ByteBuffer encrypt(const std::string& plaintextStr, const Key& keyNum, const Iv&
  
     ByteBuffer ciphertext(plaintext.size() + blockSize);
 
-    EVP_CIPHER_CTX *ctx;
+    CipherCtxHandler ctx;
 
     int len;
 
     int ciphertext_len;
-
-    /* Create and initialise the context */
-    if(!(ctx = EVP_CIPHER_CTX_new())) throw std::runtime_error("encrypt failed ctx new");;
 
     /* Initialise the encryption operation. IMPORTANT - ensure you use a key
      * and IV size appropriate for your cipher
      * In this example we are using 256 bit AES (i.e. a 256 bit key). The
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits */
-    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data()))
+    if(1 != EVP_EncryptInit_ex(&ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data()))
         throw std::runtime_error("encrypt failed ctx init");
 
     /* Provide the message to be encrypted, and obtain the encrypted output.
      * EVP_EncryptUpdate can be called multiple times if necessary
      */
-    if(1 != EVP_EncryptUpdate(ctx, ciphertext.data(), &len, plaintext.data(), plaintext.size()))
+    if(1 != EVP_EncryptUpdate(&ctx, ciphertext.data(), &len, plaintext.data(), plaintext.size()))
         throw std::runtime_error("encrypt failed encrypt update");
     ciphertext_len = len;
 
     /* Finalise the encryption. Further ciphertext bytes may be written at
      * this stage.
      */
-    if(1 != EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len)) throw std::runtime_error("encrypt failed encrypt final");
+    if(1 != EVP_EncryptFinal_ex(&ctx, ciphertext.data() + len, &len)) throw std::runtime_error("encrypt failed encrypt final");
     ciphertext_len += len;
-
-    /* Clean up */
-    EVP_CIPHER_CTX_free(ctx);
-    
+   
     ciphertext.resize(ciphertext_len);
     return ciphertext;
 }
 
 std::string decrypt(const ByteBuffer& ciphertext, const Key& keyNum, const Iv& ivNum)
 {
-    EVP_CIPHER_CTX *ctx;
-  
+    CipherCtxHandler ctx;
+   
     auto key = toBytes(keyNum, AES_BITS / 8);
     auto iv = toBytes(ivNum, AES_BITS / 16);
   
@@ -103,32 +118,26 @@ std::string decrypt(const ByteBuffer& ciphertext, const Key& keyNum, const Iv& i
     int len;
     int plaintext_len;
 
-    /* Create and initialise the context */
-    if(!(ctx = EVP_CIPHER_CTX_new())) throw std::runtime_error("decrypt Failed new ctx");
-
     /* Initialise the decryption operation. IMPORTANT - ensure you use a key
      * and IV size appropriate for your cipher
      * In this example we are using 256 bit AES (i.e. a 256 bit key). The
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits */
-    if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data()))
+    if(1 != EVP_DecryptInit_ex(&ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data()))
         throw std::runtime_error("decrypt Failed init");
 
     /* Provide the message to be decrypted, and obtain the plaintext output.
      * EVP_DecryptUpdate can be called multiple times if necessary
      */
-    if(1 != EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext.data(), ciphertext.size()))
+    if(1 != EVP_DecryptUpdate(&ctx, plaintext.data(), &len, ciphertext.data(), ciphertext.size()))
         throw std::runtime_error("decrypt Failed update");
     plaintext_len = len;
 
     /* Finalise the decryption. Further plaintext bytes may be written at
      * this stage.
      */
-    if(1 != EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len)) throw std::runtime_error("decrypt Failed final");
+    if(1 != EVP_DecryptFinal_ex(&ctx, plaintext.data() + len, &len)) throw std::runtime_error("decrypt Failed final");
         plaintext_len += len;
-
-    /* Clean up */
-    EVP_CIPHER_CTX_free(ctx);
 
     plaintext.resize(plaintext_len);
     
@@ -148,12 +157,14 @@ public:
         numOfThreads_(std::thread::hardware_concurrency())
     {
         suffixLength_ = lengthOfKey(suffix_);
-        maxKey_ = (Key(1) << (keyLength_ * 8 + 1)) - 1;
+        maxKey_ = (Key(1) << (keyLength_ * 4 + 1)) - 1;
     }
 
     Keys crack(const ByteBuffer& cryptogram)
     {
+        const int blockSize = EVP_CIPHER_block_size(EVP_aes_256_cbc());
         cryptogram_ = cryptogram;
+        std::copy(std::begin(cryptogram_), std::begin(cryptogram_) + blockSize, std::back_inserter(shortCryptogram_)); 
         keys_ = {};
         
         std::cout << "Cracking using " << numOfThreads_ << " threads" << std::endl; 
@@ -182,12 +193,22 @@ private:
        for(Key prefix = s; prefix < maxKey_; prefix += numOfThreads_)
        {
            Key fullKey = (prefix << (suffixLength_ * 8)) + suffix_;
-           std::cout << "trying key: " << std::hex << fullKey << std::endl;
+           using Dec = mp::number<mp::cpp_dec_float<0> >;
+           if(prefix % 0x010000 == 0) 
+               std::cout << boost::format("progress: %1$8.5f%%") % ((fullKey.convert_to<Dec>() / maxKey_.convert_to<Dec>()) * 100.0) << std::endl;
+           //std::cout << "trying key: " << std::hex << fullKey << std::endl;
            try
            {
-               auto possiblePlaintext = decrypt(cryptogram_, fullKey, iv_);
-               if(isValid(possiblePlaintext)) 
-                   insertKey(fullKey);   
+               auto possiblePlaintext = decrypt(shortCryptogram_, fullKey, iv_);
+               if(!isValid(possiblePlaintext))
+                   continue;
+               
+               possiblePlaintext = decrypt(cryptogram_, fullKey, iv_);
+               if(isValid(possiblePlaintext))
+               {
+                   std::cout << boost::format("FOUND! key:%1$x, plaintext:%2$s") % fullKey % possiblePlaintext << std::endl;
+                   insertKey(fullKey);
+               }   
            }
            catch(...)
            {
@@ -215,6 +236,7 @@ private:
     std::mutex possibleKeyInsertionMutex_;
     Keys keys_;
     ByteBuffer cryptogram_;
+    ByteBuffer shortCryptogram_;
     const uint64_t numOfThreads_;
 };
 

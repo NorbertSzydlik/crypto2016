@@ -16,9 +16,18 @@ public:
         iv_(iv),
         numOfThreads_(std::thread::hardware_concurrency())
     {
+        std::cout <<
+            (boost::format("Suffix: '%1%', keyLength: %2%, suffixSize: %3%")
+                % suffix
+                % keyLength
+                % suffix.size()
+            ) << std::endl;
+        assert(suffix.size() < keyLength);
         suffixNum_ = Key(numberFromBytes(std::begin(suffix), std::end(suffix)));
-        auto maxKeyStr = std::string('f', keyLength);
-        maxKey_ = Key(numberFromBytes(std::begin(maxKeyStr), std::end(maxKeyStr)));
+        std::cout << "KeyLength=" << keyLength << std::endl;
+        maxKey_ = std::string(keyLength - suffix.size(), 'f') + suffix_;
+        std::cout << "maxKey:" << maxKey_ << std::endl;
+        assert(maxKey_.size() == keyLength);
     }
 
     Keys crack(const ByteBuffer& ciphertext)
@@ -49,21 +58,28 @@ private:
         std::lock_guard<std::mutex> lock(possibleKeyInsertionMutex_);
         keys_.push_back(key);
     }
+    std::string getFullKeyStr(const Key& prefix)
+    {
+        std::string prefixHex = (boost::format("%1$p") % prefix).str();
+        auto keyHex = prefixHex + suffix_;
+        assert(keyHex.size() == keyLength_);
+
+        return keyHex;
+    }
     Key getFullKey(const Key& prefix)
     {
-        auto key = (prefix << (suffix_.size() * 4)) + suffixNum_;
-        auto keyHex = hex(toBytes(key, AES_BITS), false);
+        const auto keyHex = getFullKeyStr(prefix);
         return Key(numberFromBytes(std::begin(keyHex), std::end(keyHex)));
     }
     void crackThread(int s)
     {
-       for(Key prefix = s; prefix < maxKey_; prefix += numOfThreads_)
+       Key prefix = s;
+       auto fullKeyStr = getFullKeyStr(prefix);
+       while(fullKeyStr <= maxKey_)
        {
-           Key fullKey = getFullKey(prefix);
-           using Dec = boost::multiprecision::number<boost::multiprecision::cpp_dec_float<0> >;
-           if(prefix % 0x010000 == 0)
-               std::cout << boost::format("progress: %1$8.5f%%") % ((fullKey.convert_to<Dec>() / maxKey_.convert_to<Dec>()) * 100.0) << std::endl;
-           //std::cout << "trying key: " << std::hex << fullKey << std::endl;
+           assert(fullKeyStr.size() <= keyLength_);
+           auto fullKey = Key(numberFromBytes(std::begin(fullKeyStr), std::end(fullKeyStr)));
+           std::cout << "trying key: " << fullKeyStr << std::endl;
            try
            {
                auto possiblePlaintext = decrypt(ivCiphertext_, fullKey, iv_);
@@ -75,6 +91,10 @@ private:
            catch(...)
            {
            }
+           prefix += numOfThreads_;
+           fullKeyStr = getFullKeyStr(prefix);
+
+           std::cout << "key:" << fullKeyStr << " maxKey:" << maxKey_ << std::endl;
        }
     }
     bool isValid(const std::string& possiblePlaintext)
@@ -88,7 +108,7 @@ private:
     unsigned int suffixLength_;
     std::string suffix_;
     Key suffixNum_;
-    Key maxKey_;
+    std::string maxKey_;
     Iv iv_;
     std::mutex possibleKeyInsertionMutex_;
     Keys keys_;

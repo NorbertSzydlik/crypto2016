@@ -64,7 +64,7 @@ void task1()
         0b01111011, 0b10011011, 0b11000100, 0b00111001,
         0b11001101, 0b11010110, 0b01110110, 0b01100111
     };
-    Cracker c(16, Key("0xaa56b18f"), Iv("0x4ef619fdd4cda8a7a752851953264200"));
+    Cracker c(16, "aa56b18f", Iv("0x4ef619fdd4cda8a7a752851953264200"));
     auto keys = c.crack(cryptogram);
     for(auto& k : keys)
     {

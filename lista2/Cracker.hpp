@@ -3,6 +3,7 @@
 #include <memory>
 #include <iterator>
 #include <string>
+#include <algorithm>
 #include <boost/format.hpp>
 #include "utils.hpp"
 
@@ -16,17 +17,9 @@ public:
         iv_(iv),
         numOfThreads_(std::thread::hardware_concurrency())
     {
-        std::cout <<
-            (boost::format("Suffix: '%1%', keyLength: %2%, suffixSize: %3%")
-                % suffix
-                % keyLength
-                % suffix.size()
-            ) << std::endl;
         assert(suffix.size() < keyLength);
         suffixNum_ = Key(numberFromBytes(std::begin(suffix), std::end(suffix)));
-        std::cout << "KeyLength=" << keyLength << std::endl;
         maxKey_ = std::string(keyLength - suffix.size(), 'f') + suffix_;
-        std::cout << "maxKey:" << maxKey_ << std::endl;
         assert(maxKey_.size() == keyLength);
     }
 
@@ -60,9 +53,9 @@ private:
     }
     std::string getFullKeyStr(const Key& prefix)
     {
-        std::string prefixHex = (boost::format("%1$p") % prefix).str();
+        std::string prefixHex = (boost::format("%1$x") % prefix).str();
         auto keyHex = prefixHex + suffix_;
-        assert(keyHex.size() == keyLength_);
+        std::transform(std::begin(keyHex), std::end(keyHex), std::begin(keyHex), ::tolower);
 
         return keyHex;
     }
@@ -75,17 +68,18 @@ private:
     {
        Key prefix = s;
        auto fullKeyStr = getFullKeyStr(prefix);
-       while(fullKeyStr <= maxKey_)
+       while(fullKeyStr.size() <= keyLength_)
        {
-           assert(fullKeyStr.size() <= keyLength_);
            auto fullKey = Key(numberFromBytes(std::begin(fullKeyStr), std::end(fullKeyStr)));
-           std::cout << "trying key: " << fullKeyStr << std::endl;
            try
            {
                auto possiblePlaintext = decrypt(ivCiphertext_, fullKey, iv_);
                if(!isValid(possiblePlaintext))
                    continue;
-               std::cout << boost::format("FOUND! key:%1$x, plaintext:%2$s") % fullKey % possiblePlaintext << std::endl;
+               std::cout
+                   << "FOUND! possiblePlaintext:'" << possiblePlaintext
+                   << "', fullKeyStr:'" << fullKeyStr << "'"
+                   << std::endl; 
                insertKey(fullKey);
            }
            catch(...)
@@ -93,8 +87,6 @@ private:
            }
            prefix += numOfThreads_;
            fullKeyStr = getFullKeyStr(prefix);
-
-           std::cout << "key:" << fullKeyStr << " maxKey:" << maxKey_ << std::endl;
        }
     }
     bool isValid(const std::string& possiblePlaintext)

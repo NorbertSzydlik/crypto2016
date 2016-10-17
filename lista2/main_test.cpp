@@ -5,17 +5,20 @@
 
 void test_isCrackerValid()
 {
-    ByteBuffer keyBuff{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
-    std::string keySuffixStr(keyBuff.size() - 1, 0);
-    std::copy(std::begin(keyBuff) + 1, std::end(keyBuff), std::begin(keySuffixStr));
-    auto key = Key(numberFromBytes(std::begin(keyBuff), std::end(keyBuff)));
-    auto keySuffix = Key(numberFromBytes(std::begin(keyBuff) + 1, std::end(keyBuff)));
+    std::string keyStr = "f123456789";
+    std::string keySuffixStr(keyStr.size() - 1, 0);
+    std::copy(std::begin(keyStr) + 1, std::end(keyStr), std::begin(keySuffixStr));
+
+    for(auto c : keyStr) std::cout << (int)c << " " << std::endl;
+
+    auto key = Key(numberFromBytes(std::begin(keyStr), std::end(keyStr)));
     auto iv = Iv("0x4ef619fdd4cda8a7a752851953264200");
     std::string plaintext = "TEXT TO ENCRYPT";
     auto ciphertext = encrypt(plaintext, key, iv);
-    Cracker c(keyBuff.size(), keySuffixStr, iv);
+    Cracker c(keyStr.size(), keySuffixStr, iv);
 
     auto possibleKeys = c.crack(ciphertext);
+    assert(possibleKeys.size() > 0);
     auto decrypted = decrypt(ciphertext, possibleKeys[0], iv);
     assert(plaintext == decrypted);
 }

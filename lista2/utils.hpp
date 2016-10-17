@@ -10,17 +10,20 @@ using Key = boost::multiprecision::uint256_t;
 using Iv = boost::multiprecision::uint128_t;
 const auto AES_BITS = 256;
 
-std::string hex(const ByteBuffer& b)
+std::string hex(const ByteBuffer& b, bool splitWithSpaces)
 {
     std::ostringstream oss;
     for(const auto& c : b)
     {
         oss << std::setfill('0');
         oss << std::setw(2);
-        oss << std::hex << static_cast<int>(c) << " ";
+        oss << std::hex << static_cast<int>(c) << (splitWithSpaces ? " " : "");
     }
     return oss.str();
-
+}
+std::string hex(const ByteBuffer& b)
+{
+    return hex(b, true);
 }
 
 ByteBuffer toBytes(const boost::multiprecision::cpp_int num, std::size_t desiredSize)

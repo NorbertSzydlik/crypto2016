@@ -7,3 +7,5 @@ set (CMAKE_CXX_STANDARD 14)
 add_executable(lista2 main.cpp)
 target_link_libraries(lista2 ssl crypto pthread)
 
+add_executable(lista2_test main_test.cpp)
+target_link_libraries(lista2_test ssl crypto pthread)

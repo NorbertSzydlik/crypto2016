@@ -37,7 +37,7 @@ template <class ForwardIterator>
 boost::multiprecision::cpp_int numberFromBytes(const ForwardIterator& begin, const ForwardIterator& end)
 {
     boost::multiprecision::cpp_int num;
-    boost::multiprecision::import_bits(num, begin, end);
+    boost::multiprecision::import_bits(num, begin, end, 8);
     return num;
 }
 

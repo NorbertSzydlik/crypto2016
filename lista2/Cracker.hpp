@@ -71,16 +71,18 @@ private:
        while(fullKeyStr.size() <= keyLength_)
        {
            auto fullKey = Key(numberFromBytes(std::begin(fullKeyStr), std::end(fullKeyStr)));
+           if(prefix % (1024 * 8) == 0) std::cout << "current key:'" << fullKeyStr << "'" << std::endl;
            try
            {
                auto possiblePlaintext = decrypt(ivCiphertext_, fullKey, iv_);
-               if(!isValid(possiblePlaintext))
-                   continue;
-               std::cout
-                   << "FOUND! possiblePlaintext:'" << possiblePlaintext
-                   << "', fullKeyStr:'" << fullKeyStr << "'"
-                   << std::endl; 
-               insertKey(fullKey);
+               if(isValid(possiblePlaintext))
+               {
+                   std::cout
+                       << "FOUND! possiblePlaintext:'" << possiblePlaintext
+                       << "', fullKeyStr:'" << fullKeyStr << "'"
+                       << std::endl;
+                   insertKey(fullKey);
+               }
            }
            catch(...)
            {

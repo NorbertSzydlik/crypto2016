@@ -15,7 +15,7 @@ public:
         keyLength_(keyLength),
         suffix_(suffix),
         iv_(iv),
-        numOfThreads_(std::thread::hardware_concurrency())
+        numOfThreads_(1)//std::thread::hardware_concurrency())
     {
         assert(suffix.size() < keyLength);
         suffixNum_ = Key(numberFromBytes(std::begin(suffix), std::end(suffix)));
@@ -54,7 +54,9 @@ private:
     std::string getFullKeyStr(const Key& prefix)
     {
         std::string prefixHex = (boost::format("%1$x") % prefix).str();
-        auto keyHex = prefixHex + suffix_;
+        auto zeroesNeeded = (int)keyLength_ - (int)prefixHex.size() - (int)suffix_.size();
+        std::string zeroes = zeroesNeeded > 0 ? std::string(zeroesNeeded, '0') : "";
+        auto keyHex = zeroes + prefixHex + suffix_;
         std::transform(std::begin(keyHex), std::end(keyHex), std::begin(keyHex), ::tolower);
 
         return keyHex;
@@ -62,7 +64,7 @@ private:
     Key getFullKey(const Key& prefix)
     {
         const auto keyHex = getFullKeyStr(prefix);
-        return Key(numberFromBytes(std::begin(keyHex), std::end(keyHex)));
+        return Key("0x" + keyHex);
     }
     void crackThread(int s)
     {
@@ -70,13 +72,12 @@ private:
        auto fullKeyStr = getFullKeyStr(prefix);
        while(fullKeyStr.size() <= keyLength_)
        {
-           auto fullKey = Key(numberFromBytes(std::begin(fullKeyStr), std::end(fullKeyStr)));
+           auto fullKey = getFullKey(prefix);
            if(prefix % (1024 * 8) == 0) std::cout << "current key:'" << fullKeyStr << "'" << std::endl;
            try
            {
-               auto possiblePlaintext = decrypt(ivCiphertext_, fullKey, iv_);
-               if(isValid(possiblePlaintext))
-               {
+               auto possiblePlaintext = decrypt(ciphertext_, fullKey, iv_);
+               if(isValid(possiblePlaintext)) {
                    std::cout
                        << "FOUND! possiblePlaintext:'" << possiblePlaintext
                        << "', fullKeyStr:'" << fullKeyStr << "'"
@@ -93,8 +94,10 @@ private:
     }
     bool isValid(const std::string& possiblePlaintext)
     {
+        //std::cout << "testing: '" << possiblePlaintext << "'" << std::endl;
         return std::all_of(std::begin(possiblePlaintext), std::end(possiblePlaintext), [](const auto& c) {
-            return c >= 32 && c <= 126;
+            //std::cout << "current: " << (int)c << " " << c << std::endl;
+            return (c >= 32 && c <= 126) || c == 10 || c == 13 || c == 0;
         });
     }
 

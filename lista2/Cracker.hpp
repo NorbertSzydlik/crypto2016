@@ -17,7 +17,7 @@ public:
   keyLength_(keyLength),
   suffix_(suffix),
   iv_(iv),
-  numOfThreads_(std::thread::hardware_concurrency())
+  numOfThreads_(1)//std::thread::hardware_concurrency())
   {
     assert(suffix.size() < keyLength);
     suffixBuf_ = toBytes(boost::multiprecision::cpp_int("0x" + suffix), keyLength / 2);
@@ -29,7 +29,9 @@ public:
   {
     const int blockSize = EVP_CIPHER_block_size(EVP_aes_256_cbc());
     ciphertext_ = ciphertext;
-    std::copy(std::begin(ciphertext_), std::begin(ciphertext_) + (blockSize), std::back_inserter(ivCiphertext_));
+    ivCiphertext_ = {};
+    std::copy(std::begin(ciphertext_), std::begin(ciphertext_) + 32, std::back_inserter(ivCiphertext_));
+    assert(ivCiphertext_.size() % 16 == 0);
     keys_ = {};
     working_ = true;
     lastPrint_.store(0);
@@ -80,19 +82,17 @@ private:
       printSpeed();
       try
       {
-        auto possiblePlaintext = decrypt(ivCiphertext_, key, iv_);
-        //if(isValid(possiblePlaintext)) {
-          //auto possiblePlaintext = decrypt(ciphertext_, key, iv_);
-          if(isValid(possiblePlaintext))
-          {
-            std::cout
-            << "FOUND! possiblePlaintext:'" << possiblePlaintext
-            << "', fullKeyStr:'" << hex(key) << "'"
-            << std::endl;
-            insertKey(key);
-            working_ = false;
-          }
-        //}
+        std::cout << "key:" << hex(key, false) << std::endl;
+        auto possiblePlaintext = decrypt(ciphertext_, key, iv_);
+        if(isValid(possiblePlaintext))
+        {
+          std::cout
+          << "FOUND! possiblePlaintext:'" << possiblePlaintext
+          << "', fullKeyStr:'" << hex(key) << "'"
+          << std::endl;
+          insertKey(key);
+          working_ = false;
+        }
       }
       catch(...)
       {
@@ -102,9 +102,9 @@ private:
   }
   bool isValid(const std::string& possiblePlaintext)
   {
-    //std::cout << "testing: '" << possiblePlaintext << "'" << std::endl;
+    std::cout << "testing: '" << possiblePlaintext << "'" << std::endl;
     return std::all_of(std::begin(possiblePlaintext), std::end(possiblePlaintext), [](const auto& c) {
-      //std::cout << "current: " << (int)c << " " << c << std::endl;
+      std::cout << "current: " << (int)c << " " << c << std::endl;
       return std::isgraph(c) || std::isspace(c);
     });
   }

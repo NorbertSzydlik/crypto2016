@@ -17,7 +17,7 @@ public:
   keyLength_(keyLength),
   suffix_(suffix),
   iv_(iv),
-  numOfThreads_(1)//std::thread::hardware_concurrency())
+  numOfThreads_(std::thread::hardware_concurrency())
   {
     assert(suffix.size() < keyLength);
     suffixBuf_ = toBytes(boost::multiprecision::cpp_int("0x" + suffix), keyLength / 2);
@@ -82,7 +82,6 @@ private:
       printSpeed();
       try
       {
-        std::cout << "key:" << hex(key, false) << std::endl;
         auto possiblePlaintext = decrypt(ciphertext_, key, iv_);
         if(isValid(possiblePlaintext))
         {
@@ -102,9 +101,7 @@ private:
   }
   bool isValid(const std::string& possiblePlaintext)
   {
-    std::cout << "testing: '" << possiblePlaintext << "'" << std::endl;
     return std::all_of(std::begin(possiblePlaintext), std::end(possiblePlaintext), [](const auto& c) {
-      std::cout << "current: " << (int)c << " " << c << std::endl;
       return std::isgraph(c) || std::isspace(c);
     });
   }

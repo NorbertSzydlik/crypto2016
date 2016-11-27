@@ -19,7 +19,9 @@ db.all("SELECT name FROM sqlite_master WHERE type='table';", function(err, rows)
     var salt = randomString(256);
     db.run("INSERT INTO users (name, salt, passwd) VALUES(?, ?, ?)", "test", salt, sha256(salt + "123456"));
   });
-  db.run("CREATE TABLE payments (userName TEXT, targetAccount TEXT, amount INT)");
+  db.run("CREATE TABLE payments (userName TEXT, title TEXT, targetAccount TEXT, amount INT)", function(err) {
+    db.run("INSERT INTO payments (userName, title, targetAccount, amount) VALUES(?, ?, ?, ?)", "test", "title", "123456", 100);
+  });
 
   console.log("Database created");
 });
